@@ -2,15 +2,58 @@
 
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/xfeatures2d/nonfree.hpp>
+#include <opencv2/features2d/features2d.hpp>
+#include <opencv2/xfeatures2d.hpp>
+#include <math.h>
 
 namespace cmt {
 
-void CMT::initialize(const Mat im_gray, const Rect rect, string tracker_name, int threshold_value)
+//http://stackoverflow.com/questions/36691050/opencv-3-list-of-available-featuredetectorcreate-and-descriptorextractorc
+enum string_code{
+    dBrisk, // detector + descriptor
+    dOrb, // detector + descriptor
+    dMser, // detector
+    dFast, // detector
+    dAgast, // detector
+    dGTTT, // detector
+    dSimpleBlog, // detector (fails on loosing pbject)
+    dKaze, // detector + descriptor (not sure how to use)
+    dAkaze, // detector + descriptor (not sure how to use)
+    dFreak, // descriptor
+    dStar, // detector
+    dBrief, // descriptor
+    dLucid, // descriptor
+    dLatch, // descriptor
+    dDaisy, // descriptor
+    dMsd, // detector
+    dSift, // detector + descriptor
+    dSurf // detector + descriptor (HORRIBY SLOW ON PI)
+};
+string_code switch_string_input(std::string const& inString){
+    if (inString == "BRISK") return dBrisk;
+    if (inString == "ORB") return dOrb;
+    if (inString == "MSER") return dMser;
+    if (inString == "FAST") return dFast;
+    if (inString == "AGAST") return dAgast;
+    if (inString == "GFFT") return dGTTT;
+    if (inString == "SimpleBlobDetector") return dSimpleBlog;
+    if (inString == "FREAK") return dFreak;
+    if (inString == "BRIEF") return dBrief;
+    if (inString == "MSD") return dMsd;
+    if (inString == "LUCID") return dLucid;
+    if (inString == "LATCH") return dLatch;
+    if (inString == "DAISY") return dDaisy;
+    if (inString == "SIFT") return dSift;
+    if (inString == "SURF") return dSurf;
+}
+void CMT::initialize(const Mat im_gray, const Rect rect, string tracker_name, int & threshold_value)
 {
     initialized = false;
     name = tracker_name;
-    threshold = threshold_value;
-    //FILE_LOG(logDEBUG) << "CMT::initialize() call";
+    FILE_LOG(logDEBUG) << "CMT::initialize() call";
+
+    FILE_LOG(logDEBUG) << " threshold: " << threshold_value;
 
     //Remember initial size
     size_initial = rect.size();
@@ -26,16 +69,83 @@ void CMT::initialize(const Mat im_gray, const Rect rect, string tracker_name, in
 
     //Initialize detector and descriptor
 #if CV_MAJOR_VERSION > 2
-    detector = cv::FastFeatureDetector::create();
-    descriptor = cv::BRISK::create();
+    // see here for available feature detectors: http://stackoverflow.com/questions/36691050/opencv-3-list-of-available-featuredetectorcreate-and-descriptorextractorc
+    switch(switch_string_input(str_detector)){
+        case dBrisk:
+            detector = cv::BRISK::create();
+            break;
+        case dOrb:
+            detector = cv::ORB::create();
+            break;
+        case dMser:
+            detector = cv::MSER::create();
+            break;
+        case dFast:
+            detector = cv::FastFeatureDetector::create();
+            break;
+        case dAgast:
+            detector = cv::AgastFeatureDetector::create();
+            break;
+        case dGTTT:
+            detector = cv::GFTTDetector::create();
+            break;
+        case dMsd:
+            detector = cv::xfeatures2d::MSDDetector::create();
+            break;
+        case dSimpleBlog:
+            detector = cv::SimpleBlobDetector::create();
+            break;
+        case dSift:
+            detector = cv::xfeatures2d::SIFT::create();
+            break;
+        case dSurf:
+            detector = cv::xfeatures2d::SURF::create();
+            break;
+        default:
+            detector = cv::FastFeatureDetector::create();
+    }
+    switch(switch_string_input(str_descriptor)){
+        case dBrisk:
+            descriptor = cv::BRISK::create();
+            break;
+        case dOrb:
+            descriptor = cv::ORB::create();
+            break;
+        case dFreak:
+            descriptor = cv::xfeatures2d::FREAK::create();
+            break;
+        case dLucid:
+            descriptor = cv::xfeatures2d::LUCID::create(10, 10);
+            break;
+        case dDaisy:
+            descriptor = cv::xfeatures2d::DAISY::create();
+            break;
+        case dLatch:
+            descriptor = cv::xfeatures2d::LATCH::create();
+            break;
+        case dSift:
+            descriptor = cv::xfeatures2d::SIFT::create();
+            break;
+        case dSurf:
+            descriptor = cv::xfeatures2d::SURF::create();
+            break;
+        default:
+            descriptor = cv::BRISK::create();
+    }
+
 #else
     detector = FeatureDetector::create(str_detector);
     descriptor = DescriptorExtractor::create(str_descriptor);
+    FILE_LOG(logDEBUG) << "OpenCV 3: " << str_detector << "  Feature Detector.";
+    FILE_LOG(logDEBUG) << "OpenCV 3: " << str_descriptor << " Descriptor Extractor.";
 #endif
+
 
     //Get initial keypoints in whole image and compute their descriptors
     vector<KeyPoint> keypoints;
     detector->detect(im_gray, keypoints);
+
+    FILE_LOG(logDEBUG) << keypoints.size() << " total keypoints.";
 
     //Divide keypoints into foreground and background keypoints according to selection
     vector<KeyPoint> keypoints_fg;
@@ -50,7 +160,6 @@ void CMT::initialize(const Mat im_gray, const Rect rect, string tracker_name, in
         {
             keypoints_fg.push_back(k);
         }
-
         else
         {
             keypoints_bg.push_back(k);
@@ -81,12 +190,13 @@ void CMT::initialize(const Mat im_gray, const Rect rect, string tracker_name, in
         points_fg.push_back(keypoints_fg[i].pt);
     }
 
-    //FILE_LOG(logDEBUG) << points_fg.size() << " foreground points.";
-
     for (size_t i = 0; i < keypoints_bg.size(); i++)
     {
         points_bg.push_back(keypoints_bg[i].pt);
     }
+
+    FILE_LOG(logDEBUG) << points_fg.size() << " computed foreground points.";
+    FILE_LOG(logDEBUG) << points_bg.size() << " computed background points.";
 
     //Create normalized points
     vector<Point2f> points_normalized;
@@ -94,6 +204,17 @@ void CMT::initialize(const Mat im_gray, const Rect rect, string tracker_name, in
     {
         points_normalized.push_back(points_fg[i] - center);
     }
+
+    if(threshold_value == -1){
+        // we pick a 70% value for threshold based on full point count
+        threshold_value = floor(points_fg.size() * 0.7);
+        if( threshold_value < 2) threshold_value = 0;
+        FILE_LOG(logDEBUG) << threshold_value << " new threshold value based on point count of " << points_fg.size();
+    }
+
+    threshold_original = points_fg.size();
+    threshold_maybe = floor(threshold_value * 0.4);
+    threshold = threshold_value; // set public variable.
 
     //Initialize matcher
     matcher.initialize(points_normalized, descs_fg, classes_fg, descs_bg, center);
@@ -122,7 +243,7 @@ void CMT::initialize(const Mat im_gray, const Rect rect, string tracker_name, in
     pointsArchive.assign(points_fg.begin(), points_fg.end());
     classesArchive.assign(classes_fg.begin(), classes_fg.end());
 
-    ////FILE_LOG(logDEBUG) << "CMT::initialize() return";
+    FILE_LOG(logDEBUG) << "CMT::initialize() return";
     initialized = true;
 }
 
@@ -134,7 +255,9 @@ void CMT::set_name(string tracker_name)
 
 void CMT::processFrame(Mat im_gray, int threshold) {
 
-    ////FILE_LOG(logDEBUG) << "CMT::processFrame() call";
+//    FILE_LOG(logDEBUG) << "CMT::processFrame() call";
+
+//    FILE_LOG(logDEBUG) << " threshold: " << threshold;
 
     //Track keypoints
     vector<Point2f> points_tracked;
@@ -144,10 +267,12 @@ void CMT::processFrame(Mat im_gray, int threshold) {
     if (!opticalflow_results)
     {
 
+        FILE_LOG(logDEBUG) << " NO OPTICAL FLOW RESULTS! ";
+
         if (threshold != 0)
         {
             tracker_lost = true;
-            return;
+            //return;
         }
         else
         {
@@ -156,24 +281,28 @@ void CMT::processFrame(Mat im_gray, int threshold) {
         }
     }
 
-    //FILE_LOG(logDEBUG) << points_tracked.size() << " tracked points.";
+    FILE_LOG(logDEBUG) << points_tracked.size() << " tracked points.";
+    FILE_LOG(logDEBUG) << classes_active.size() << " class active size.";
 
     //keep only successful classes
     vector<int> classes_tracked;
     for (size_t i = 0; i < classes_active.size(); i++)
     {
-        if (status[i])
+        if (i < status.size() && status[i])
         {
             classes_tracked.push_back(classes_active[i]);
         }
 
     }
 
+
+    FILE_LOG(logDEBUG) << classes_tracked.size() << " class tracked size.";
+
     //Detect keypoints, compute descriptors
     vector<KeyPoint> keypoints;
     detector->detect(im_gray, keypoints);
 
-    //FILE_LOG(logDEBUG) << keypoints.size() << " keypoints found.";
+    FILE_LOG(logDEBUG) << keypoints.size() << " keypoints found.";
 
     Mat descriptors;
     descriptor->compute(im_gray, keypoints, descriptors);
@@ -183,7 +312,7 @@ void CMT::processFrame(Mat im_gray, int threshold) {
     vector<int> classes_matched_global;
     matcher.matchGlobal(keypoints, descriptors, points_matched_global, classes_matched_global);
 
-    //FILE_LOG(logDEBUG) << points_matched_global.size() << " points matched globally.";
+    FILE_LOG(logDEBUG) << points_matched_global.size() << " points matched globally.";
 
     //Fuse tracked and globally matched points
     vector<Point2f> points_fused;
@@ -191,14 +320,14 @@ void CMT::processFrame(Mat im_gray, int threshold) {
     fusion.preferFirst(points_tracked, classes_tracked, points_matched_global, classes_matched_global,
                        points_fused, classes_fused);
 
-    //FILE_LOG(logDEBUG) << points_fused.size() << " points fused.";
+    FILE_LOG(logDEBUG) << points_fused.size() << " points fused.";
 
     //Estimate scale and rotation from the fused points
     float scale;
     float rotation;
     consensus.estimateScaleRotation(points_fused, classes_fused, scale, rotation);
 
-    //FILE_LOG(logDEBUG) << "scale " << scale << ", " << "rotation " << rotation;
+    FILE_LOG(logDEBUG) << "scale " << scale << ", " << "rotation " << rotation;
 
     //Find inliers and the center of their votes
     Point2f center;
@@ -207,15 +336,15 @@ void CMT::processFrame(Mat im_gray, int threshold) {
     consensus.findConsensus(points_fused, classes_fused, scale, rotation,
                             center, points_inlier, classes_inlier);
 
-    //FILE_LOG(logDEBUG) << points_inlier.size() << " inlier points.";
-    //FILE_LOG(logDEBUG) << "center " << center;
+    FILE_LOG(logDEBUG) << points_inlier.size() << " inlier points.";
+    FILE_LOG(logDEBUG) << "center " << center;
 
     //Match keypoints locally
     vector<Point2f> points_matched_local;
     vector<int> classes_matched_local;
     matcher.matchLocal(keypoints, descriptors, center, scale, rotation, points_matched_local, classes_matched_local);
 
-    //FILE_LOG(logDEBUG) << points_matched_local.size() << " points matched locally.";
+    FILE_LOG(logDEBUG) << points_matched_local.size() << " points matched locally.";
 
     //Assing the active points in the space.
 
@@ -229,7 +358,16 @@ void CMT::processFrame(Mat im_gray, int threshold) {
 //    points_active = points_fused;
 //    classes_active = classes_fused;
     num_active_keypoints = points_active.size();
-    //FILE_LOG(logDEBUG) << points_active.size() << " final fused points.";
+    FILE_LOG(logDEBUG) << points_active.size() << " final fused points.";
+
+    for (size_t i = 0; i < classesArchive.size(); i++)
+    {
+        FILE_LOG(logDEBUG) << " - ARCHIVE: " << classesArchive[i];
+    }
+    for (size_t i = 0; i < classes_active.size(); i++)
+    {
+        FILE_LOG(logDEBUG) << " - active: " << classes_active[i];
+    }
 
     //TODO: Use theta to suppress result
     bb_rot = RotatedRect(center,  size_initial * scale, rotation / CV_PI * 180);
@@ -238,7 +376,7 @@ void CMT::processFrame(Mat im_gray, int threshold) {
     im_prev = im_gray;
 
 
-    //FILE_LOG(logDEBUG) << "CMT::processFrame() return";
+//    FILE_LOG(logDEBUG) << "CMT::processFrame() return";
 }
 
 } /* namespace CMT */

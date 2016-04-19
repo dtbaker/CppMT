@@ -2,11 +2,17 @@ project (CMT)
 
 cmake_minimum_required (VERSION 2.6)
 
-option(BUILD_SHARED_LIBS "Build shared libraries." ON)
-option(BUILD_WRAPPER "Build C and Python wrapper." ON)
+option(BUILD_SHARED_LIBS "Build shared libraries." OFF)
+option(BUILD_WRAPPER "Build C and Python wrapper." OFF)
 option(BUILD_TRAX_CLIENT "Build the trax client." OFF)
 
+set(CMAKE_MODULE_PATH "/usr/local/lib/cmake/")
+
+find_package(raspicam REQUIRED)
 find_package(OpenCV REQUIRED)
+
+FIND_LIBRARY(ZMQ_LIB zmq HINTS "/usr/lib" REQUIRED)
+FIND_LIBRARY(LIBMEMCACHED_LIBRARY memcached HINTS "/usr/lib" REQUIRED)
 
 # uninstall target
 configure_file(
@@ -21,17 +27,17 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-add_definitions ("-Wall")
+# add_definitions ("-Wall")
+add_definitions ("-w")
 
+include_directories(${OpenCV_INCLUDE_DIRS})
 
-add_library(cmtlib common.cpp CMT.cpp Consensus.cpp Fusion.cpp Matcher.cpp
-    Tracker.cpp fastcluster/fastcluster.cpp)
+add_library(cmtlib common.cpp CMT.cpp Consensus.cpp Fusion.cpp Matcher.cpp Tracker.cpp fastcluster/fastcluster.cpp)
 target_link_libraries(cmtlib ${OpenCV_LIBS})
 set_target_properties(cmtlib PROPERTIES OUTPUT_NAME "cmt")
 
-
 add_executable(cmt gui.cpp main.cpp)
-target_link_libraries(cmt cmtlib)
+target_link_libraries(cmt cmtlib ${OpenCV_LIBS} ${raspicam_CV_LIBS} ${ZMQ_LIB} ${LIBMEMCACHED_LIBRARY})
 
 install (TARGETS cmtlib DESTINATION lib)
 install (FILES CMT.h common.h Matcher.h Tracker.h cwrapper.h gui.h Fusion.h Consensus.h DESTINATION include/)

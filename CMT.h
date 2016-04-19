@@ -22,8 +22,8 @@ namespace cmt
 class CMT
 {
 public:
-    CMT() : str_detector("FAST"), str_descriptor("BRISK"), initialized(false), name("unset") , threshold(50),identified(false), tracker_lost(false){};
-    void initialize(const Mat im_gray, const Rect rect, string tracker_name, int threshold=50);
+    CMT() : str_detector("FAST"), str_descriptor("BRISK"), initial_frame_image(""), initialized(false), name("unset"), identified(false), tracker_lost(false){};
+    void initialize(const Mat im_gray, const Rect rect, string tracker_name, int & threshold);
     void processFrame(const Mat im_gray,int threshold=50);
     void set_name(string tracker_name);
     Fusion fusion;
@@ -31,6 +31,7 @@ public:
     Tracker tracker;
     Consensus consensus;
 
+    string initial_frame_image;
     string str_detector;
     string str_descriptor;
 
@@ -41,6 +42,8 @@ public:
 	int num_initial_keypoints; 
 	int num_active_keypoints; 
     int threshold; 
+    int threshold_original;
+    int threshold_maybe;
 
 	//Removing the optical flow if elements are stopped. 
 	bool opticalflow_results; 

@@ -35,6 +35,9 @@ void Matcher::initialize(const vector<Point2f> & pts_fg_norm, const Mat desc_fg,
     classes.insert(classes.end(), classes_fg.begin(), classes_fg.end());
 
     //Create descriptor matcher
+    //http://docs.opencv.org/3.0-beta/modules/features2d/doc/common_interfaces_of_descriptor_matchers.html#descriptormatcher-create
+//    bfmatcher = DescriptorMatcher::create("BruteForce-L1");
+//    bfmatcher = DescriptorMatcher::create("FlannBased");
     bfmatcher = DescriptorMatcher::create("BruteForce-Hamming");
 
     //FILE_LOG(logDEBUG) << "Matcher::initialize() return";
